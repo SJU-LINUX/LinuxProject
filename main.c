@@ -186,8 +186,8 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    /* 8x8 분할, 4x4 분할 결정 */
     int partition;
-
     partition = atoi(argv[1]);
     if (partition != 8 && partition != 4) {
         printf("partition size can be only 8 or 4\n");
@@ -196,20 +196,35 @@ int main(int argc, char** argv) {
 
     int i;
 
+    /* 데이터 생성 */
     init_data();
 
+
+    /* IPC 자원 생성 */
+    // (1) 메시지큐 (Generator -> Client)
     int msg_qid = create_msg_queue();
     create_shm();
 
+    // (2) 공유 메모리 (Client -> Client)
+
+
+    /* 서버 생성 및 실행 */
     create_servers();
+
+
+    /* 클라이언트 생성 및 실행 */
     create_clients(msg_qid);
 
+
+    /* 데이터 분배 */
     partitioning_data(msg_qid, partition);
 
     for (i = 0; i < 12; i++) {
         wait(NULL);
     }
 
+
+    /* IPC 자원 할당 해제 */
     clean(msg_qid);
 
     printf("[main] all done\n");
