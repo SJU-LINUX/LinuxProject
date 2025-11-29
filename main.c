@@ -1,6 +1,8 @@
 #include "common.h"
+#include "client.h"
 
 int shm_ids[4];
+int sort_shm_id; // [추가] 정렬용 공유 메모리 ID
 
 void init_data() {
     int fd;
@@ -56,17 +58,33 @@ void create_shm() {
 
         printf("[main] shm created\n");
     }
+
+    // 2. [추가] 클라이언트 간 통신(정렬)용 SHM 생성 및 초기화
+    sort_shm_id = shmget(INTER_CLIENT_SHM_KEY, sizeof(SharedSortBuffer), IPC_CREAT | 0666);
+    if (sort_shm_id == -1) { perror("sort shmget"); exit(1); }
+    
+    // 초기화 (플래그 0으로 설정)
+    SharedSortBuffer *sb = (SharedSortBuffer *)shmat(sort_shm_id, NULL, 0);
+    //memset(sb->ready_flags, 0, sizeof(sb->ready_flags));
+    shmdt(sb);
+    
+    printf("[main] Inter-Client Sorting SHM created\n");
 }
 
 void partitioning_data(int msg_qid, int partition) {
-    int r, c;
-    int i;
+    int r, c, i;
     struct msgbuf msg;
     int data[64][64];
+    
+    // [추가] 각 Client로 보낼 데이터를 임시 저장할 버퍼
+    // client_buffers[클라이언트ID][데이터인덱스]
+    int client_buffers[8][INTS_PER_CLIENT];
+    int client_counts[8] = {0, }; // 각 Client별 현재 저장된 개수
 
     FILE* fp = fopen("data", "rb");
     int sm_fd[8];
 
+    // Generator의 분산 과정 기록용 파일 열기
     for (i = 0; i < 8; i++) {
         char name[32];
         sprintf(name, "sm%d_%dx%d", i, partition, partition);
@@ -85,47 +103,58 @@ void partitioning_data(int msg_qid, int partition) {
     fread(data, sizeof(int), 64 * 64, fp);
     fclose(fp);
 
+    // 1. 데이터 분류 (Partitioning) -> 버퍼에 저장
     if (partition == 8) {
         for (r = 0; r < 64; r++) {
             for (c = 0; c < 64; c++) {
-                int sm_id = c / 8;
-                msg.mtype = sm_id + 1;
-                msg.value = data[r][c];
+                int sm_id = c / 8; // 8x8 분할 로직 (Vertical Strips)
 
-                if (msgsnd(msg_qid, &msg, sizeof(int), 0) == -1) {
-                    perror("msgsnd");
-                    exit(1);
-                }
+                // 해당 Client 버퍼에 데이터 적재
+                int current_idx = client_counts[sm_id]++;
+                client_buffers[sm_id][current_idx] = data[r][c];
 
+                // 확인용 파일 쓰기 (기존 유지)
                 write(sm_fd[sm_id], &data[r][c], sizeof(int));
             }
         }
-
-        printf("[main] 8*8 partitioning data to SM\n");
+        printf("[main] 8*8 partitioning data buffered\n");
     }
-
     else if (partition == 4) {
         for (r = 0; r < 64; r++) {
             for (c = 0; c < 64; c++) {
                 int block_row = r / 4;
                 int block_col = c / 4;
                 int block_id = block_row * 16 + block_col;
+                int sm_id = block_id % 8; // 4x4 분할 로직 (Round Robin)
 
-                int sm_id = block_id % 8;
+                // 해당 Client 버퍼에 데이터 적재
+                int current_idx = client_counts[sm_id]++;
+                client_buffers[sm_id][current_idx] = data[r][c];
 
-                msg.mtype = sm_id + 1;
-                msg.value = data[r][c];
-
-                if (msgsnd(msg_qid, &msg, sizeof(int), 0) == -1) {
-                    perror("msgsnd");
-                    exit(1);
-                }
-
+                // 확인용 파일 쓰기 (기존 유지)
                 write(sm_fd[sm_id], &data[r][c], sizeof(int));
             }
         }
+        printf("[main] 4*4 partitioning data buffered\n");
+    }
 
-        printf("[main] 4*4 partitioning data to SM\n");
+    // 2. 메시지 큐 전송 (일괄 전송)
+    // 분류가 끝난 후, 각 Client에게 1개의 큰 메시지(512개 정수)로 전송
+    for (i = 0; i < 8; i++) {
+        msg.mtype = i + 1; // 수신자 ID 설정 (1 ~ 8)
+        
+        // 버퍼 내용을 메시지 구조체로 복사
+        for (int k = 0; k < INTS_PER_CLIENT; k++) {
+            msg.data[k] = client_buffers[i][k];
+        }
+
+        // 전송 (Payload 크기 = 512 * 4 bytes = 2048 bytes)
+        // 4096번 보내던 것을 8번으로 줄여서 큐 넘침 방지
+        if (msgsnd(msg_qid, &msg, sizeof(int) * INTS_PER_CLIENT, 0) == -1) {
+            perror("msgsnd");
+            exit(1);
+        }
+        printf("[main] Sent batched data to Client %d\n", i);
     }
 
     for (i = 0; i < 8; i++) {
@@ -157,7 +186,7 @@ void create_clients(int msg_qid) {
     for (i = 0; i < 8; i++) {
         int pid = fork();
         if (pid == 0) {
-            //client_main(i, msg_qid);
+            client_main(i, msg_qid);
             exit(0);
         } else if (pid < 0) {
             perror("fork client");
@@ -176,9 +205,12 @@ void clean(int msg_qid) {
     for (i = 0; i < 4; i++) {
         shmctl(shm_ids[i], IPC_RMID, NULL);
     }
-
+    
+    // [추가] 정렬용 공유 메모리 제거
+    shmctl(sort_shm_id, IPC_RMID, NULL);
     printf("[main] all IPC removed\n");
 }
+
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -203,9 +235,9 @@ int main(int argc, char** argv) {
     /* IPC 자원 생성 */
     // (1) 메시지큐 (Generator -> Client)
     int msg_qid = create_msg_queue();
-    create_shm();
 
     // (2) 공유 메모리 (Client -> Client)
+    create_shm();
 
 
     /* 서버 생성 및 실행 */
