@@ -30,5 +30,9 @@ typedef struct {
     int full_data[TOTAL_INTS];  // 0~4095까지 정렬될 전체 공간
     int ready_flags[8];         // 클라이언트 8명의 작업 완료 여부 (동기화용)
 } SharedSortBuffer;
-
+//클라이언트-서버 shm구조체
+typedef struct {
+    int flags[2];
+    int data[2][INTS_PER_CLIENT];
+} ServerShm;
 #endif
