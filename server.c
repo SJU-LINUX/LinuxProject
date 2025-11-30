@@ -1,6 +1,6 @@
 #include "server.h"
 #include <sys/time.h>
-#include <common.h>
+#include "common.h"
 
 void server_main(int server_id) {
     // 변수 선언
