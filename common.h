@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <string.h>
 
 // --- 상수 정의 ---
 #define SHM_SIZE (4096 * sizeof(int))
