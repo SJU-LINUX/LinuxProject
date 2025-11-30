@@ -1,6 +1,6 @@
 #include "common.h"
 #include "client.h"
-
+#include "server.h"
 int shm_ids[4];
 int sort_shm_id; // [추가] 정렬용 공유 메모리 ID
 
@@ -53,9 +53,17 @@ void create_shm() {
             perror("shmget");
             exit(1);
         }
-
+        
         shm_ids[i] = shm_id;
-
+        //shm flag 0으로 초기화
+        void *ptr = shmat(shm_id, NULL, 0);
+        if (ptr == (void *)-1) {
+            perror("shmat init failed");
+            exit(1);
+        }
+        memset(ptr, 0, SHM_SIZE);
+        
+        shmdt(ptr);
         printf("[main] shm created\n");
     }
 
@@ -169,7 +177,7 @@ void create_servers() {
         int pid = fork();
 
         if (pid == 0) {
-            //server_main(i);
+            server_main(i);
             exit(0);
         } else if (pid < 0) {
             perror("fork server");
