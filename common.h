@@ -18,7 +18,7 @@
 #define TOTAL_INTS (64 * 64)      // 전체 데이터 크기
 
 #define INTER_CLIENT_SHM_KEY 0x7777
-
+#define Client_to_Server_MSG_KEY 0x9999
 // --- 데이터 구조 ---
 // [수정] 데드락 방지를 위해 데이터를 한 번에(Batch) 전송하도록 변경
 struct msgbuf {
@@ -31,9 +31,5 @@ typedef struct {
     int full_data[TOTAL_INTS];  // 0~4095까지 정렬될 전체 공간
     int ready_flags[8];         // 클라이언트 8명의 작업 완료 여부 (동기화용)
 } SharedSortBuffer;
-//클라이언트-서버 shm구조체
-typedef struct {
-    int flags[2];
-    int data[2][INTS_PER_CLIENT];
-} ServerShm;
+
 #endif
