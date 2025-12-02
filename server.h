@@ -4,6 +4,6 @@
 #include "common.h"
 
 // server_id: 0 ~ 3
-void server_main(int server_id);
+void server_main(int server_id, int mq_srv_id);
 
 #endif

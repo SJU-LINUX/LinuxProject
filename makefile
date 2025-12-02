@@ -20,4 +20,5 @@ clean:
 	rm -f data
 	rm -f sm*_8x8 sm*_4x4
 	rm -f client_gathered_*
+	rm -f client_sorted_*
 	rm -f server_*.bin

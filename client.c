@@ -5,7 +5,7 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     struct msg_cli_server msg_send;
     int local_data[INTS_PER_CLIENT];
     int sorted_data[INTS_PER_CLIENT];
-    int i, k;
+    int i;
     
     // 시간 측정 변수
     struct timeval t_start, t_end;
@@ -65,7 +65,7 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     // ---------------------------------------------------
     // Step 3. Server로 데이터 전송 (MQ)
     // ---------------------------------------------------
-    int target_server = client_id % 4; // 0,4->1, 1,5->2 ...
+    int target_server = client_id % 4 + 1; // 0,4->1, 1,5->2 ...
     
     msg_send.mtype = target_server;
     msg_send.src_client_id = client_id;
@@ -78,6 +78,10 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
         }
     }
 
+    printf("--------------------------------------\n");
+    printf("[Client %d] Done. Comm Time: %.6f sec\n", client_id, comm_time);
+    printf("--------------------------------------\n");
+    
 
     // 검증용 파일 저장
     char fname[32];
@@ -86,6 +90,5 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     fwrite(sorted_data, sizeof(int), INTS_PER_CLIENT, fp);
     fclose(fp);
 
-    printf("[Client %d] Done. Comm Time: %.6f sec\n", client_id, comm_time);
     exit(0);
 }

@@ -121,11 +121,11 @@ make
 
 생성된 바이너리 파일을 od 명령어로 확인하여 데이터가 정렬되었는지 확인합니다. (-v 옵션 필수)
 ```
-\# Client 0이 0\~511까지의 값을 가지고 있는지 확인  
-od \-t d4 \-v client\_sorted\_0
+# Client 0이 0\~511까지의 값을 가지고 있는지 확인  
+od -t d4 -v client_sorted_0
 
-\# Client 1이 512\~1023까지의 값을 가지고 있는지 확인  
-od \-t d4 \-v client\_sorted\_1
+# Client 1이 512\~1023까지의 값을 가지고 있는지 확인  
+od -t d4 -v client_sorted_1
 ```
 
 ### **5\. 청소 (Clean)**
