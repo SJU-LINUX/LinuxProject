@@ -9,9 +9,10 @@ void server_main(int server_id, int mq_srv_id) {
     double comm_time = 0.0;
     double io_time = 0.0;
 
-    // Server당 2명의 Client * 16 chunks = 32 messages 수신 대기
-    int msg_expected = 2 * NUM_CHUNKS;
-    int msg_received = 0;
+    // 각 Client(2명)가 2개의 Block(256개)을 보내고, 각 Block은 8개의 Chunk로 구성됨
+    // 총 Chunk 수 = 2 Clients * 2 Blocks * 8 Chunks = 32 Chunks
+    int total_chunks = 2 * BLOCKS_PER_CLIENT * CHUNKS_PER_BLOCK;
+    int received_chunks = 0;
 
     sprintf(fname, "server_%d.bin", server_id);
     FILE *fp = fopen(fname, "wb");
@@ -19,11 +20,11 @@ void server_main(int server_id, int mq_srv_id) {
 
     printf("[Server %d] Ready.\n", server_id);
 
-    while(msg_received < msg_expected) {
+    while(received_chunks < total_chunks) {
         gettimeofday(&t_start, NULL);
 
         // 메시지 수신 (Payload size 주의: 데이터 + client_id)
-        size_t payload_size = sizeof(int)*CHUNK_SIZE + sizeof(int);
+        size_t payload_size = sizeof(struct msg_cli_server) - sizeof(long);
         if (msgrcv(mq_srv_id, &msg, payload_size, server_id, 0) == -1) {
             perror("Server msgrcv failed");
             exit(1);
@@ -40,7 +41,7 @@ void server_main(int server_id, int mq_srv_id) {
         io_time += (double)(t_end.tv_sec - t_recv.tv_sec) + 
                    (double)(t_end.tv_usec - t_recv.tv_usec) / 1000000.0;
 
-        msg_received++;
+        received_chunks++;
     }
 
     fclose(fp);

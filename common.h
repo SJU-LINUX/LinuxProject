@@ -21,6 +21,10 @@
 #define TOTAL_INTS (MATRIX_SIZE * MATRIX_SIZE) // 4096
 #define INTS_PER_CLIENT (TOTAL_INTS / NUM_CLIENTS) // 512
 
+#define BLOCK_SIZE 256 
+#define BLOCKS_PER_CLIENT (INTS_PER_CLIENT / BLOCK_SIZE) // 2 blocks
+#define CHUNKS_PER_BLOCK (BLOCK_SIZE / CHUNK_SIZE) 
+
 // [안전장치] 메시지 큐 전송 단위 (32 ints = 128 bytes)
 // 시스템별 msgmax 제한(2048~8192)을 안전하게 우회하기 위함
 #define CHUNK_SIZE 32
@@ -43,6 +47,7 @@ struct msg_gen_client {
 struct msg_cli_server {
     long mtype;                 // Target Server ID
     int src_client_id;          // 보낸 Client ID
+    int block_id; // 0 or 1 (256개 단위 구분용)
     int data[CHUNK_SIZE];       // 조각난 데이터
 };
 

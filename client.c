@@ -14,7 +14,8 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     // ---------------------------------------------------
     // Step 1. Generator로부터 데이터 수신 (MQ)
     // ---------------------------------------------------
-    for (i = 0; i < NUM_CHUNKS; i++) {
+    int total_chunks = INTS_PER_CLIENT / CHUNK_SIZE;
+    for (i = 0; i < total_chunks; i++) {
         if (msgrcv(mq_gen_id, &msg_recv, sizeof(int)*CHUNK_SIZE, client_id + 1, 0) == -1) {
             perror("Client msgrcv failed");
             exit(1);
@@ -70,12 +71,20 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     msg_send.mtype = target_server;
     msg_send.src_client_id = client_id;
 
-    for (i = 0; i < NUM_CHUNKS; i++) {
-        memcpy(msg_send.data, &sorted_data[i * CHUNK_SIZE], sizeof(int)*CHUNK_SIZE);
-        if (msgsnd(mq_srv_id, &msg_send, sizeof(int)*CHUNK_SIZE + sizeof(int), 0) == -1) {
-            perror("Client msgsnd failed");
-            exit(1);
+    // Block 0 (First 256 ints) & Block 1 (Second 256 ints)
+    for (int b = 0; b < BLOCKS_PER_CLIENT; b++) {
+        msg_send.block_id = b; // 블록 ID 명시
+        
+        // 각 블록 내부를 작은 Chunk로 쪼개서 전송
+        for (int c = 0; c < CHUNKS_PER_BLOCK; c++) {
+            int offset = (b * BLOCK_SIZE) + (c * CHUNK_SIZE);
+            memcpy(msg_send.data, &sorted_data[offset], sizeof(int)*CHUNK_SIZE);
+            
+            if (msgsnd(mq_srv_id, &msg_send, sizeof(struct msg_cli_server) - sizeof(long), 0) == -1) {
+                perror("Client msgsnd"); exit(1);
+            }
         }
+        // printf("[Client %d] Sent Block %d (256 ints) to Server %d.\n", client_id, b, target_server);
     }
 
     printf("--------------------------------------\n");
