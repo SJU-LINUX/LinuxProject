@@ -18,43 +18,42 @@
 #define NUM_CLIENTS 8
 #define NUM_SERVERS 4
 #define MATRIX_SIZE 64
-#define TOTAL_INTS (MATRIX_SIZE * MATRIX_SIZE) // 4096
+#define TOTAL_INTS (MATRIX_SIZE * MATRIX_SIZE)
 #define INTS_PER_CLIENT (TOTAL_INTS / NUM_CLIENTS) // 512
 
+// 요구사항: Server는 256개씩 받음
 #define BLOCK_SIZE 256 
 #define BLOCKS_PER_CLIENT (INTS_PER_CLIENT / BLOCK_SIZE) // 2 blocks
-#define CHUNKS_PER_BLOCK (BLOCK_SIZE / CHUNK_SIZE) 
 
-// [안전장치] 메시지 큐 전송 단위 (32 ints = 128 bytes)
-// 시스템별 msgmax 제한(2048~8192)을 안전하게 우회하기 위함
+// Generator -> Client 전송용 작은 청크 (안전성 유지)
 #define CHUNK_SIZE 32
-#define NUM_CHUNKS (INTS_PER_CLIENT / CHUNK_SIZE) // 16번 전송
+#define NUM_CHUNKS (INTS_PER_CLIENT / CHUNK_SIZE) 
 
-// IPC 키값 (충돌 방지를 위한 고유 키)
+// IPC Keys
 #define KEY_MQ_GEN_CLIENT  0x1234
 #define KEY_SHM_SORT       0x5678
 #define KEY_MQ_CLI_SERVER  0x9ABC
 
 // --- 데이터 구조 ---
 
-// 1. Generator -> Client 메시지
+// 1. Generator -> Client 메시지 (기존 유지: 작은 청크로 안전하게 전송)
 struct msg_gen_client {
-    long mtype;                 // Target Client ID + 1
-    int data[CHUNK_SIZE];       // 조각난 데이터
+    long mtype;
+    int data[CHUNK_SIZE];
 };
 
-// 2. Client -> Server 메시지
+// 2. Client -> Server 메시지 (수정: 256개 블록 단위 전송)
 struct msg_cli_server {
-    long mtype;                 // Target Server ID
-    int src_client_id;          // 보낸 Client ID
-    int block_id; // 0 or 1 (256개 단위 구분용)
-    int data[CHUNK_SIZE];       // 조각난 데이터
+    long mtype;                 
+    int src_client_id;          
+    int block_id;               
+    int data[BLOCK_SIZE]; // [수정] 32 -> 256 (1KB 데이터를 한 번에 담음)
 };
 
 // 3. Client 간 정렬용 공유 메모리
 typedef struct {
-    int full_data[TOTAL_INTS];  // 전체 데이터 공간 (인덱스 = 값)
-    int ready_flags[NUM_CLIENTS]; // 동기화 플래그 (0:진행중, 1:완료)
+    int full_data[TOTAL_INTS];
+    int ready_flags[NUM_CLIENTS];
 } SharedSortBuffer;
 
 #endif

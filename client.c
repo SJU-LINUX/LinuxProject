@@ -5,99 +5,82 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     struct msg_cli_server msg_send;
     int local_data[INTS_PER_CLIENT];
     int sorted_data[INTS_PER_CLIENT];
-    int i;
-    
-    // 시간 측정 변수
     struct timeval t_start, t_end;
     double comm_time = 0.0;
 
-    // ---------------------------------------------------
-    // Step 1. Generator로부터 데이터 수신 (MQ)
-    // ---------------------------------------------------
+    // 1. Receive from Generator (기존 유지: 32개씩 수신)
     int total_chunks = INTS_PER_CLIENT / CHUNK_SIZE;
-    for (i = 0; i < total_chunks; i++) {
-        if (msgrcv(mq_gen_id, &msg_recv, sizeof(int)*CHUNK_SIZE, client_id + 1, 0) == -1) {
-            perror("Client msgrcv failed");
-            exit(1);
+    for (int i = 0; i < total_chunks; i++) {
+        if (msgrcv(mq_gen_id, &msg_recv, sizeof(struct msg_gen_client) - sizeof(long), client_id + 1, 0) == -1) {
+            perror("Client msgrcv"); exit(1);
         }
         memcpy(&local_data[i * CHUNK_SIZE], msg_recv.data, sizeof(int)*CHUNK_SIZE);
     }
-    printf("[Client %d] Received data from Generator.\n", client_id);
 
-
-    // ---------------------------------------------------
-    // Step 2. Client 간 정렬 (Shared Memory)
-    // ---------------------------------------------------
-    gettimeofday(&t_start, NULL); // 통신 시간 측정 시작
-
-    // SHM 연결
+    // 2. Sort (SHM) - 기존 유지
+    gettimeofday(&t_start, NULL);
+    
     int shm_id = shmget(KEY_SHM_SORT, sizeof(SharedSortBuffer), 0666);
-    if (shm_id == -1) { perror("Client shmget failed"); exit(1); }
+    if (shm_id == -1) { perror("Client shmget"); exit(1); }
     SharedSortBuffer *sb = (SharedSortBuffer *)shmat(shm_id, NULL, 0);
 
-    // (A) Scattering: 값을 인덱스로 사용하여 배치
-    for (i = 0; i < INTS_PER_CLIENT; i++) {
+    for (int i = 0; i < INTS_PER_CLIENT; i++) {
         int val = local_data[i];
         sb->full_data[val] = val;
     }
-
-    // (B) Barrier: 모든 클라이언트가 쓸 때까지 대기
     sb->ready_flags[client_id] = 1;
+
     while(1) {
         int count = 0;
-        for(i=0; i<NUM_CLIENTS; i++) count += sb->ready_flags[i];
+        for(int k=0; k<NUM_CLIENTS; k++) count += sb->ready_flags[k];
         if(count == NUM_CLIENTS) break;
-        usleep(100); // CPU 양보
+        usleep(100);
     }
 
-    // (C) Gathering: 내 담당 구역 가져오기
     int start_idx = client_id * INTS_PER_CLIENT;
-    for (i = 0; i < INTS_PER_CLIENT; i++) {
+    for (int i = 0; i < INTS_PER_CLIENT; i++) {
         sorted_data[i] = sb->full_data[start_idx + i];
     }
-    
-    shmdt(sb); // SHM 분리
+    shmdt(sb);
 
-    gettimeofday(&t_end, NULL); // 통신 시간 측정 종료
+    gettimeofday(&t_end, NULL);
     comm_time = (double)(t_end.tv_sec - t_start.tv_sec) + 
                 (double)(t_end.tv_usec - t_start.tv_usec) / 1000000.0;
 
-
     // ---------------------------------------------------
-    // Step 3. Server로 데이터 전송 (MQ)
+    // Step 3. Server로 데이터 전송 (수정됨)
     // ---------------------------------------------------
-    int target_server = client_id % 4 + 1; // 0,4->1, 1,5->2 ...
-    
+    // 256개(1KB)씩 쪼개지 않고 통째로 보냅니다.
+    int target_server = (client_id / 2) + 1;
     msg_send.mtype = target_server;
     msg_send.src_client_id = client_id;
 
     // Block 0 (First 256 ints) & Block 1 (Second 256 ints)
     for (int b = 0; b < BLOCKS_PER_CLIENT; b++) {
-        msg_send.block_id = b; // 블록 ID 명시
+        msg_send.block_id = b; 
         
-        // 각 블록 내부를 작은 Chunk로 쪼개서 전송
-        for (int c = 0; c < CHUNKS_PER_BLOCK; c++) {
-            int offset = (b * BLOCK_SIZE) + (c * CHUNK_SIZE);
-            memcpy(msg_send.data, &sorted_data[offset], sizeof(int)*CHUNK_SIZE);
-            
-            if (msgsnd(mq_srv_id, &msg_send, sizeof(struct msg_cli_server) - sizeof(long), 0) == -1) {
-                perror("Client msgsnd"); exit(1);
-            }
+        // [수정] 작은 청크 루프 제거 -> 블록 전체 복사
+        int offset = b * BLOCK_SIZE;
+        memcpy(msg_send.data, &sorted_data[offset], sizeof(int) * BLOCK_SIZE);
+        
+        // Payload size: src_client_id + block_id + data[256]
+        size_t payload_size = sizeof(struct msg_cli_server) - sizeof(long);
+        
+        if (msgsnd(mq_srv_id, &msg_send, payload_size, 0) == -1) {
+            perror("Client msgsnd"); 
+            printf("Error Detail: Size=%lu\n", payload_size);
+            exit(1);
         }
-        // printf("[Client %d] Sent Block %d (256 ints) to Server %d.\n", client_id, b, target_server);
+        printf("[Client %d] Sent Block %d (256 ints) to Server %d.\n", client_id, b, target_server);
     }
 
-    printf("--------------------------------------\n");
-    printf("[Client %d] Done. Comm Time: %.6f sec\n", client_id, comm_time);
-    printf("--------------------------------------\n");
-    
-
-    // 검증용 파일 저장
+    // 파일 저장
     char fname[32];
     sprintf(fname, "client_sorted_%d", client_id);
     FILE *fp = fopen(fname, "wb");
     fwrite(sorted_data, sizeof(int), INTS_PER_CLIENT, fp);
     fclose(fp);
 
+    printf("[Client %d] Done. Comm Time: %.6f sec\n", client_id, comm_time);
     exit(0);
 }
