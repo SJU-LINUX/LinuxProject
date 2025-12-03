@@ -74,7 +74,8 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
             printf("Error Detail: Size=%lu\n", payload_size);
             exit(1);
         }
-        printf("[Client %d] Sent Block %d (256 ints) to Server %d.\n", client_id, b, target_server);
+        //printf("[Client %d] Sent Block %d (256 ints) to Server %d.\n", client_id, b, target_server);
+        printf("[Client %d] Sent Block %d (Size : %d) to Server %d.\n", client_id, b, (int)payload_size, target_server);
     }
 
     gettimeofday(&t_end, NULL);

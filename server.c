@@ -52,3 +52,10 @@ void server_main(int server_id, int mq_srv_id) {
     printf("======================================\n");
     exit(0);
 }
+
+
+/*
+1. 받을 때 데잍터들 정렬될 것
+2. 시간 계산 ()
+3. 서버가 받아서 정렬  send()+recv()
+*/
