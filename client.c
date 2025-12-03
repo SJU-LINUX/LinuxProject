@@ -7,6 +7,7 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     int sorted_data[INTS_PER_CLIENT];
     struct timeval t_start, t_end;
     double comm_time = 0.0;
+    double send_time = 0.0;
 
     // 1. Receive from Generator (기존 유지: 32개씩 수신)
     int total_chunks = INTS_PER_CLIENT / CHUNK_SIZE;
@@ -55,6 +56,8 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     msg_send.mtype = target_server;
     msg_send.src_client_id = client_id;
 
+    gettimeofday(&t_start, NULL);
+
     // Block 0 (First 256 ints) & Block 1 (Second 256 ints)
     for (int b = 0; b < BLOCKS_PER_CLIENT; b++) {
         msg_send.block_id = b; 
@@ -74,6 +77,12 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
         printf("[Client %d] Sent Block %d (256 ints) to Server %d.\n", client_id, b, target_server);
     }
 
+    gettimeofday(&t_end, NULL);
+    send_time = (double)(t_end.tv_sec - t_start.tv_sec) + 
+                (double)(t_end.tv_usec - t_start.tv_usec) / 1000000.0;
+
+
+
     // 파일 저장
     char fname[32];
     sprintf(fname, "client_sorted_%d", client_id);
@@ -81,6 +90,7 @@ void client_main(int client_id, int mq_gen_id, int mq_srv_id) {
     fwrite(sorted_data, sizeof(int), INTS_PER_CLIENT, fp);
     fclose(fp);
 
+    printf("[Client %d] Done. Send Time: %.6f sec\n", client_id, send_time);
     printf("[Client %d] Done. Comm Time: %.6f sec\n", client_id, comm_time);
     exit(0);
 }
